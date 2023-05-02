@@ -1,0 +1,305 @@
+Task 1. Install the kubernates on ubuntu on Virtural box environment
+
+
+Kuberntets install on both master and node
+1. update the respository
+
+sudo su 
+apt-get update
+
+2. Turn off the swap space
+swapoff -a
+vi /etc/fstab
+#/swapfile 
+
+3. update hostname, hosts and set static IP
+vi /etc/hostname
+kmaster
+
+ifconfig 
+vi /etc/network/interfaces
+  ==> to update the static IP address
+auto lo
+iface to inet loopback
+auto enp0s8
+iface enps8 inet static
+address 192.168.56.101
+
+
+vi /etc/hosts
+ ==> update ip and hostname
+198.168.56.101 kmaster
+
+4. install OpenSSH server and Docker
+
+sudo apt-get install openssh-server
+sudo su 
+apt-get update
+apt-get install -y docker.io
+
+5. Install Kuberadm kubelet and kubectl
+
+#apt-get update && apt-get install -y apt-transport-https curl
+#curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+# cat <<EOF > /etc/sources.list.d/kubernetes.list
+deb http://apt.kubernetes.io/kubernetes-xenial main
+EOF
+
+#apt-get install -y kubelet kubeadm kubectl
+
+# apt-get update
+#vi /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+add below line
+
+Environment="cgroup-driver=systemd/cgroup-driver=cgroupfs"
+	
+Repeat all 5 steps in node machine also 
+
+
+Only on master node:
+#sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=192.168.56.101
+
+--> it will create the kubernate master node
+Step2 - Configure the home dir for admin user for kubeadm
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):(id -g) $HOME/.kube/config
+
+Step3 - run below command to create calico 192.168.0.0/16 network to the pods. For Flannel network use 10.244.0.0/16
+#kubectl apply -f https://docs.pojectscalico.org/v3.0/getting-started/kubernetes/installation/hosted/kuberadm/1.7/calico.yaml
+
+
+Step4 - Bring up the dash board /console services
+#kubectl create -f https://raw.githubusercontent.com/..../kubernetes-dashboard.yaml
+
+#kubectl proxy
+
+#kubectl create serviceaccount dashboard -n default
+serviceaccount "dashboard"created
+
+
+#kubectl create clusterrolebinding dashboard-admin -n default --clusterrole=cluster-admin --serviceaccount=default:dashboard
+
+#kubectl get secret $(kubectl get serviceaccount dashboard -o jsonpath="{.secrets[0].name}") -o jsonpath="{.data.token}" | base64 --decode
+
+get the token key from above command output and update in the below console screen to login using the token prompt
+
+http://localhost:8001/api/vi/namespace/kube-system/services/https:kubernets-dashboard:/proxy/#!/
+
+Run on Nodes to join:
+Step 5 - run the command to join the worker nodes ( this command will be ginven by above command)
+#kubeadm --join 192.168.56.101:6443 --token token_value --discovery-token-ca-cert-has hash_value
+
+###########################################################################################
+
+Task 2 - Deploy nginx service
+
+#kubectl create deployment nginx --image=nginx
+#kubectl get deployment
+#kubectl describe deployment nginx
+#kubectl create service nodeport nginx --tcp=80:80
+#kubectl get svc
+#kubectl delete deployment nginx -------------- to delete any service
+
+#############################################################################################
+
+Task 3 - Deply the service using the yaml file
+# kubectl create -f deployment.yaml 
+
+vi demo.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+labels:
+  app: nginx
+spec:
+  replicas:3
+  selector:
+  matchLabels:
+    app:nginx
+  template:
+    metadata:
+    labels:
+      app: nginx
+  spec:
+  Containers:
+  - name: nginx
+    image: nginx:1.7.9
+    ports:
+  - containerPort: 80
+--------------
+
+# kubectl apply -f demo.yaml
+# kubectl get deployments
+# kubectl get rs 
+#####################################################################################################
+
+Task 4 - update the deployments
+
+vi demo.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+labels:
+  app: nginx
+spec:
+  replicas:4 ==> Change to 4
+  selector:
+  matchLabels:
+    app:nginx
+  template:
+    metadata:
+    labels:
+      app: nginx
+  spec:
+  Containers:
+  - name: nginx
+    image: nginx:1.9.1  ==> Changed
+    ports:
+  - containerPort: 80
+
+# kubect apply -f demo.yaml
+# kubect get deployments 
+# kubectl describe deployment name_of_deployment
+
+
+##################################################
+
+Task 5 - Role back the deployment
+
+#kubectl rollout status deployment/deployment_name
+#kubectl rollout history deployment/demployment_name
+
+#kubectl rollout undo deployment/nginx-deployment --to-revison=Revision_number
+
+#################################################
+Task 6 - Scale the deployment
+
+#kubectl scale deployment nginx-deployment --replicas=4
+#kubectl get deployment
+
+####################################################
+Task 6 - Autoscale the deployment
+#kubectl autoscale deployment name_of_deployment --min=5 --max=9 --cpu-percent=80
+
+#kubectl get hpa ==> horizondal pod autoscale 
+
+#####################################################
+
+Task 7 - Disable the autoscale deployment
+
+#kubectl hpa deployment/deploymentname delete
+
+#######################################################
+Task 8 - Pause the deployment ( to avoid the deployment each time during the upgrade)
+
+#kubectl rollout pause deployment/nginx-deployment
+  -so we can update the deployment, but it won't update the deployment
+
+#kubectl set image deploy/nginx-deployment nginx=nginx:1.9.1
+#kubectl set resources deployment nginx-deployment -c=nginx --limits=cpu=200m,memory=512Mi
+
+	--> above two commands won't do any changes on deployment since it has been paused 
+
+# kubectl rollout resume deploy/deployment_name
+
+#####################################################
+Service in Kubernetes 
+	- Gives static IP and DNS name to the pod or set of pods
+	- Gives Loadbalancing for the Pods
+	- Gives mechanisam to access the application running the PODs
+
+Gluster IP service - 
+	- default service
+	- used to access the Pods within the same cluster
+Headless Service :
+	- A Headless service is a service with a service IP but instead of load-balancing it will return the IPs of our associated Pods
+	This allows us to ineract directly with the Pods instead of a proxy.
+	- Need to menstion "None" in type perameter 
+Nodeport Service :
+	- A NodePort is an open port on every node of your cluster. Kubernetes transparently routes incoming traffic on the NodePort to your service even if your applicaiton is running on a different node.
+
+ExternalName Service:
+	- are Similar to other kubernetes services however instead of being accessed via a cluster IP address it retuns a CName record with value that is defined in the external Name perameter when creating the service. 
+
+Load  Balancer Service :
+	For cluster running on bublic cloud proviers like AWS or Azure creating a LoadBalaner Service provides an equivalent to a clusterIP servic, Extending it to an external load balancer that is specific to the clooud provider 
+
+Task 9 - Use the Hostport service to access the service externally
+Task 10 - Use ClusterIp service to access the service internally 
+Task 11 - Use Loadbalancer service to access the applicaiton service externally
+Task 12 - Use Headless service to access the statefull applicaiton service internally
+
+#kubectl get pod -o wide 
+	==> To get the IP address
+#kubectl get endpoints
+	==> to list the pod's IP and it related services 
+
+Replica set - A replicaSet's Purpose is to maintain a sutable set of replica pods running at any given time. As such it is often used to guarantee the 
+availability of a specified number of identical pods.
+
+Deployments - you describe a desired state in a Deployment and the deployment controller changes the actual stage to the desired state at a controlled rate.
+
+Stateful Sets - Is the workload API object used to manage stateful applications. This manages the deployment and sacaling of a set of Pods.
+			It provides guarantees about the ordering and uniqeness of these pods. Example Mysql cluster pods ( Master pod only have rw access, worker node only have read access, and when add new worker node it's data will get sync from another worker node, to avoid the performance issue on master node)
+
+DaemonSet - It ensures that all the Nodes run a copy of a Pod. As nodes are added in to the cluster, pods are added to them. As nodes are removed from the cluster, these pods are removed from node. ( Log collector Pods are example for these daemonset example - Logs has to be collected from all the Nodes, so the log collector Node has to run on all the nodes)
+
+
+---------------------------------------------
+Config Map :
+	- to store the environment variables 
+	- To inject the config map values to the pod.
+	- Not encrypted
+
+Secret :
+	- to store the password, keys and tokens of the kubernates applicaitons /databases /services 
+	- To inject the secrets into pods whenever needed
+	- Encrypted 
+
+imperative = commandline 
+# kubectl create configmap configmap_name --from-literal=key=value
+
+Declarative 
+apiVersion: v1
+kind: configMap
+metadata:
+name: config-name
+data:
+key1: value1
+key1: value2
+kubectl apply -f filename.yaml
+
+# kubectl create configmap game_config --from-file=configgure-pod-container/configmap/
+#kubectl get confimaps
+
+# kubctl get configmap game-config -o yaml
+########################################################################################
+Sample pod file injecction for config file
+apiVersion:v1
+kind: pod
+metadata:
+  name: dapi-test-pod
+spec:
+  containers:
+    - name: test-container
+	image : k8s.gcr.io/busybox
+	command: [ "/bin/sh", "-c", "env" ]
+	env:
+		#Define the environment variable
+	  - name: SPECIAL_LWVEL_KEY
+	    valueFrom:
+		configMapKeyRef:
+		# The configMap containing the value you want to assign to SPECIAL_LEVEL_KEY
+		  name: special-config
+		# Specify the key associated with the value
+		key: special.how
+  restartPolicy: Never
+
+#kubectl apply -f pod.yaml
+#kubectl logs pod_name
+#########################################################################################
+
+
